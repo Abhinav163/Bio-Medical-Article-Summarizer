@@ -1,0 +1,12 @@
+transformers>=4.30
+torch
+pypdf2
+requests
+beautifulsoup4
+tqdm
+streamlit
+nltk
+networkx
+scikit-learn
+wordcloud
+matplotlib

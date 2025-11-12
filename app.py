@@ -1,197 +1,104 @@
 import streamlit as st
-from extract_pdf import extract_text_from_pdf
-from extract_url import extract_text_from_url
-from summarize import get_summarizer, summarize_text
-from preprocess import clean_text
-from extractive import extractive_summarize
 
-from wordcloud import WordCloud
-import matplotlib.pyplot as plt
+import text_processing
+import summarizer
+import qa_generator
+import article_finder
+import visuals
 
-from wordcloud import wordcloud
-import matplotlib.pyplot as plt
+st.set_page_config(
+    page_title="BioMedical Article Summarizer",
+    page_icon="🔬",
+    layout="wide"
+)
 
+st.title("🔬 BioMedical Article Summarizer")
+st.markdown("Upload a PDF or enter a URL to summarize, analyze, and explore biomedical articles.")
 
-import tempfile
-import os
-
-st.set_page_config(page_title="Biomedical Summarizer", layout="wide")
-
-st.title("🩺 Biomedical Article Summarizer") 
-st.write("Upload a **PDF** or paste a **URL** of a biomedical article to get a summary.")
-
-model_options = {
-    "facebook/bart-large-cnn": "Facebook BART Large CNN (General)",
-    "sshleifer/distilbart-cnn-12-6": "DistilBART CNN (General)",
-    "allenai/led-base-16384": "LED Base Longformer (General, long doc)"
-}
-
-
-option_model = st.sidebar.selectbox("Choose Model or Select 'Compare for All'", 
-                                    options=["Compare"] + list(model_options.keys()), 
-                                    format_func=lambda x: "Compare All" if x=="Compare" else model_options.get(x, x))
-
-summary_type = st.sidebar.radio("Summarization Type", ["Abstractive", "Extractive"])
-
-max_len = st.sidebar.slider("Max Summary Length", 50, 300, 150)
-min_len = st.sidebar.slider("Min Summary Length", 10, 100, 30)
-
-@st.cache_resource
-def load_summarizer(model_name):
-    return get_summarizer(model_name)
-
-# Preload summarizers if compare is selected
-summarizers = {}
-if option_model == "Compare":
-    for m in model_options:
-        summarizers[m] = load_summarizer(m)
-else:
-    summarizers[option_model] = load_summarizer(option_model)
-
-uploaded_pdf = st.file_uploader("Upload PDF file", type=["pdf"])
-url_input = st.text_input("Or paste article URL here")
-
-if st.button("Summarize"):
-
-    extracted_text = ""
-
-    if uploaded_pdf is not None:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-            tmp_file.write(uploaded_pdf.read())
-            tmp_file_path = tmp_file.name
-            extracted_text = extract_text_from_pdf(tmp_file_path)
-            os.remove(tmp_file_path)
-
-    elif url_input.strip() != "":
-        extracted_text = extract_text_from_url(url_input.strip())
-
+with st.sidebar:
+    st.header("1. Input Article")
+    input_type = st.radio("Select input type:", ("URL", "PDF"))
+    
+    article_url = None
+    uploaded_pdf = None
+    
+    if input_type == "URL":
+        article_url = st.text_input("Enter the article URL:")
     else:
-        st.warning("Please upload a PDF or enter a URL.")
+        uploaded_pdf = st.file_uploader("Upload a PDF file:", type=["pdf"])
+
+    st.header("2. Choose Summary Type")
+    summary_type = st.radio("Select summary type:", ("Extractive", "Abstractive"))
+    
+    process_button = st.button("Summarize and Analyze")
+    
+if process_button:
+    article_text = None
+    with st.spinner("Step 1/5: Extracting text from source..."):
+        try:
+            if article_url:
+                article_text = text_processing.get_text_from_url(article_url)
+            elif uploaded_pdf:
+                article_text = text_processing.get_text_from_pdf(uploaded_pdf)
+        except Exception as e:
+            st.error(f"Error extracting text: {e}")
+            st.stop()
+            
+    if not article_text:
+        st.error("Could not extract text. Please check the URL or PDF file.")
         st.stop()
 
-    cleaned_text = clean_text(extracted_text)
+    tab1, tab2, tab3, tab4 = st.tabs(["Summary", "Visuals", "FAQs", "Related Articles"])
 
-    if not cleaned_text:
-        st.error("No text could be extracted from the provided source.")
-        st.stop()
+    with tab1:
+        st.header(f"{summary_type} Summary")
+        with st.spinner(f"Step 2/5: Generating {summary_type.lower()} summary..."):
+            if summary_type == "Extractive":
+                summary = summarizer.get_extractive_summary(article_text)
+            else:
+                summary = summarizer.get_abstractive_summary(article_text)
+            st.success("Summary Generated!")
+            st.write(summary)
 
-    st.subheader("📄 Generated Summary")
+    with tab2:
+        st.header("Text Visuals")
+        with st.spinner("Step 3/5: Creating visuals..."):
+            # Word Cloud
+            st.subheader("Article Word Cloud")
+            wc_fig = visuals.create_wordcloud(article_text)
+            if wc_fig:
+                st.pyplot(wc_fig)
+            else:
+                st.write("Could not generate word cloud.")
+            
+            # NER Chart
+            st.subheader("Named Entity Recognition")
+            ner_fig = visuals.create_ner_chart(article_text)
+            if ner_fig:
+                st.plotly_chart(ner_fig, use_container_width=True)
+            else:
+                st.write("Could not generate NER chart.")
 
-    if option_model == "Compare":
-        results = {}
-        for model_name, summarizer in summarizers.items():
-            if summary_type == "Abstractive":
-                summary = summarize_text(cleaned_text, summarizer, max_length=max_len, min_length=min_len)
-            else:  # Extractive
-                summary = extractive_summarize(cleaned_text, top_n=5)
-            results[model_name] = summary
+    with tab3:
+        st.header("Frequently Asked Questions")
+        with st.spinner("Step 4/5: Generating FAQs..."):
+            faqs = qa_generator.get_faqs(article_text)
+            if faqs:
+                for i, faq in enumerate(faqs):
+                    with st.expander(f"Q{i+1}: {faq['question']}"):
+                        st.write(f"**Answer:** {faq['answer']}")
+            else:
+                st.write("Could not generate FAQs for this article.")
 
-        # Display side by side
-        col1, col2, col3 = st.columns(3)
-        for col, (model_name, summary) in zip([col1, col2, col3], results.items()):
-            col.markdown(f"**{model_options[model_name]}**")
-            col.write(summary)
-            col.download_button(
-                label="Download Summary",
-                data=summary,
-                file_name=f"summary_{model_name.replace('/', '_')}.txt",
-                mime="text/plain"
-            )
-        # Visualization of summary lengths
-        lengths = [len(results[m]) for m in results]
-        st.subheader("📊 Summary Length Comparison (characters)")
-        st.bar_chart({model_options[m]: lengths[i] for i,m in enumerate(results)})
+    with tab4:
+        st.header("Related Articles from PubMed")
+        with st.spinner("Step 5/5: Finding related articles..."):
+            related_articles = article_finder.get_related_articles(article_text)
+            if related_articles:
+                for article in related_articles:
+                    st.markdown(f"**[{article['title']}]({article['url']})**")
+            else:
+                st.write("Could not find related articles.")
 
-    else:
-        summarizer = summarizers[option_model]
-        if summary_type == "Abstractive":
-            summary_result = summarize_text(cleaned_text, summarizer, max_length=max_len, min_length=min_len)
-        else:
-            summary_result = extractive_summarize(cleaned_text, top_n=5)
-
-        st.write(summary_result)
-        st.download_button(
-            label="Download Summary",
-            data=summary_result,
-            file_name="summary.txt",
-            mime="text/plain"
-        )
-
-        # Keyword Cloud Visualization
-        st.subheader("🔑 Keyword Cloud")
-        wordcloud = WordCloud(width=800, height=400, background_color='white').generate(summary_result)
-        plt.figure(figsize=(12,6))
-        plt.imshow(wordcloud, interpolation='bilinear')
-        plt.axis("off")
-        st.pyplot(plt)
-
-
-
-# import streamlit as st
-# from extract_pdf import extract_text_from_pdf
-# from extract_url import extract_text_from_url
-# from summarize import get_summarizer, summarize_text
-# from preprocess import clean_text
-# import tempfile
-# import os
-
-# # Title
-# st.set_page_config(page_title="Biomedical Summarizer", layout="wide")
-# st.title("Biomedical Article Summarizer")
-# st.write("Upload a **PDF** or paste a **URL** of a biomedical article to get a summary.")
-
-# # Sidebar - Model selection
-# # model_name = st.sidebar.text_input("HuggingFace Model Name", "facebook/bart-large-cnn")
-# max_len = st.sidebar.slider("Max Summary Length", 50, 300, 150)
-# min_len = st.sidebar.slider("Min Summary Length", 10, 100, 30)
-
-# # Initial summarizer load (cached)
-# @st.cache_resource
-# def load_summarizer(model_name):
-#     return get_summarizer(model_name)
-
-# # summarizer = load_summarizer(model_name)
-
-# # PDF Upload
-# uploaded_pdf = st.file_uploader("Upload PDF file", type=["pdf"])
-
-# # URL Input
-# url_input = st.text_input("Or paste article URL here")
-
-# if st.button("Summarize"):
-#     extracted_text = ""
-
-#     # If PDF is uploaded
-#     if uploaded_pdf is not None:
-#         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-#             tmp_file.write(uploaded_pdf.read())
-#             tmp_file_path = tmp_file.name
-#         extracted_text = extract_text_from_pdf(tmp_file_path)
-#         os.remove(tmp_file_path)
-
-#     # If URL is provided
-#     elif url_input.strip() != "":
-#         extracted_text = extract_text_from_url(url_input.strip())
-
-#     else:
-#         st.warning("Please upload a PDF or enter a URL.")
-#         st.stop()
-
-#     # Clean & summarize
-#     cleaned_text = clean_text(extracted_text)
-#     if not cleaned_text:
-#         st.error("No text could be extracted from the provided source.")
-#         st.stop()
-
-#     with st.spinner("Generating summary..."):
-#         summary_result = summarize_text(cleaned_text, summarizer, max_length=max_len, min_length=min_len)
-
-#     st.subheader("Generated Summary")
-#     st.write(summary_result)
-
-#     st.download_button(
-#         label="Download Summary",
-#         data=summary_result,
-#         file_name="summary.txt",
-#         mime="text/plain"
-#     )
+    st.success("Analysis Complete!")
+    st.balloons()

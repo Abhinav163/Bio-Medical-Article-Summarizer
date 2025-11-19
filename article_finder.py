@@ -5,16 +5,19 @@ import spacy
 @st.cache_resource
 def load_spacy_model():
     """
-    Loads and caches the spaCy model.
+    Loads and caches the spaCy model (en_core_web_sm for general keyword extraction).
     """
     return spacy.load("en_core_web_sm")
 
-def get_related_articles(text):
+def get_related_articles(text, max_results=5):
     """
     Finds related articles on PubMed based on keywords from the text.
+    Accepts max_results from user input.
     """
     nlp = load_spacy_model()
-    doc = nlp(text[:1000])
+    # Limit processing for speed
+    doc = nlp(text[:1000]) 
+    
     keywords = [token.text for token in doc if token.pos_ in ("NOUN", "PROPN") and not token.is_stop]
     
     if not keywords:
@@ -23,8 +26,10 @@ def get_related_articles(text):
     search_term = " ".join(set(keywords[:10]))
     
     try:
-        pubmed = PubMed(tool="BioMedSummarizer", email="your_email@example.com")
-        results = pubmed.query(search_term, max_results=5)
+        # NOTE: Replace 'your_academic_email@example.com' with your actual email to comply with NCBI E-utilities policy.
+        pubmed = PubMed(tool="BioMedSummarizer", email="your_academic_email@example.com") 
+        
+        results = pubmed.query(search_term, max_results=max_results)
         
         articles = []
         for article in results:

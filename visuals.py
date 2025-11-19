@@ -2,15 +2,33 @@ import streamlit as st
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 import spacy
+import scispacy 
 import plotly.express as px
 import pandas as pd
+from collections import Counter
+
+# Imports for new visualizations
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize, sent_tokenize 
+from nltk.util import ngrams
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.decomposition import PCA
+
+BIOMEDICAL_MODEL = "en_core_sci_lg" 
 
 @st.cache_resource
 def load_spacy_model_for_ner():
     """
-    Loads and caches the spaCy model.
+    Loads and caches the biomedical spaCy model (SciSpacy).
     """
-    return spacy.load("en_core_web_sm")
+    try:
+        # Load the biomedical model
+        return spacy.load(BIOMEDICAL_MODEL) 
+    except OSError:
+        # Fallback if the SciSpacy model hasn't been installed yet
+        st.error(f"SciSpacy model '{BIOMEDICAL_MODEL}' not found. Falling back to 'en_core_web_sm'. Please ensure '{BIOMEDICAL_MODEL}' is installed.")
+        return spacy.load("en_core_web_sm") 
 
 def create_wordcloud(text):
     """
@@ -45,6 +63,81 @@ def create_ner_chart(text):
     fig = px.bar(entity_counts, 
                 x='Entity Label', 
                 y='Count', 
-                title="Frequency of Named Entities",
+                title="Frequency of Biomedical Named Entities (SciSpacy)", 
                 color='Entity Label')
     return fig
+
+def create_ngram_chart(text, n=2, top_k=10):
+    """
+    Generates a Plotly Bar Chart for the frequency of top N-grams (Bi-grams or Tri-grams).
+    """
+    try:
+        # Tokenization and Stopword removal
+        words = word_tokenize(text.lower())
+        stop_words = set(stopwords.words('english'))
+        filtered_words = [word for word in words if word.isalnum() and word not in stop_words and len(word) > 1]
+        
+        # Generate N-grams (e.g., bigrams if n=2)
+        ngram_list = ngrams(filtered_words, n)
+        
+        # Count frequencies
+        ngram_freq = Counter(ngram_list)
+        
+        # Prepare data for Plotly
+        top_ngrams = ngram_freq.most_common(top_k)
+        
+        if not top_ngrams:
+            return None
+            
+        df = pd.DataFrame(top_ngrams, columns=['Phrase Tuple', 'Count'])
+        df['Phrase'] = df['Phrase Tuple'].apply(lambda x: ' '.join(x))
+        
+        fig = px.bar(df, 
+                     x='Phrase', 
+                     y='Count', 
+                     title=f"Top {top_k} Most Frequent {n}-gram Phrases",
+                     color='Phrase')
+        return fig
+    except Exception as e:
+        print(f"Error creating N-gram chart: {e}")
+        return None
+
+def create_sentence_clustering_plot(text):
+    """
+    Generates a Plotly Scatter Plot showing sentence similarity using PCA on TF-IDF vectors.
+    """
+    try:
+        sentences = sent_tokenize(text)
+        # Filter out very short or empty sentences
+        sentences = [s.strip() for s in sentences if len(s.split()) > 5]
+        
+        if len(sentences) < 5:
+            return None # Not enough sentences to cluster
+
+        # 1. Vectorization (TF-IDF)
+        vectorizer = TfidfVectorizer(stop_words='english')
+        tfidf_matrix = vectorizer.fit_transform(sentences)
+        
+        # 2. Dimensionality Reduction (PCA to 2 components)
+        # Ensure we don't request more components than features
+        n_components = min(2, tfidf_matrix.shape[1]) 
+        
+        pca = PCA(n_components=n_components)
+        principal_components = pca.fit_transform(tfidf_matrix.toarray())
+        
+        df = pd.DataFrame(data=principal_components, columns=['PC1', 'PC2'][:n_components])
+        df['Sentence'] = sentences
+        df['Index'] = range(len(sentences))
+        
+        # 3. Plotting
+        fig = px.scatter(df, 
+                         x='PC1', 
+                         y='PC2', 
+                         hover_name='Sentence', 
+                         title='Sentence Similarity Clustering (PCA on TF-IDF)',
+                         labels={'PC1': 'Principal Component 1', 'PC2': 'Principal Component 2'})
+        
+        return fig
+    except Exception as e:
+        print(f"Error creating sentence clustering chart: {e}")
+        return None

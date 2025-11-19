@@ -15,7 +15,6 @@ def get_related_articles(text, max_results=5):
     Accepts max_results from user input.
     """
     nlp = load_spacy_model()
-    # Limit processing for speed
     doc = nlp(text[:1000]) 
     
     keywords = [token.text for token in doc if token.pos_ in ("NOUN", "PROPN") and not token.is_stop]
@@ -26,7 +25,6 @@ def get_related_articles(text, max_results=5):
     search_term = " ".join(set(keywords[:10]))
     
     try:
-        # NOTE: Replace 'your_academic_email@example.com' with your actual email to comply with NCBI E-utilities policy.
         pubmed = PubMed(tool="BioMedSummarizer", email="your_academic_email@example.com") 
         
         results = pubmed.query(search_term, max_results=max_results)

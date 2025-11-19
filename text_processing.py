@@ -1,8 +1,7 @@
 import requests
 import pdfplumber
 import trafilatura
-import json # <-- NEW: Import the standard JSON library
-# Import specific exception types for better error handling
+import json
 from pdfminer.pdfdocument import PDFTextExtractionNotAllowed
 from requests.exceptions import RequestException
 
@@ -16,7 +15,6 @@ def get_text_from_url(url):
         if downloaded is None:
             raise RequestException(f"Could not download content from URL: {url}")
             
-        # Extract metadata and text as a JSON string
         extracted_content = trafilatura.extract(
             downloaded, 
             include_comments=False, 
@@ -25,7 +23,6 @@ def get_text_from_url(url):
         )
         
         if extracted_content:
-            # FIX: Use json.loads() instead of the incorrect trafilatura.json_to_dict()
             data = json.loads(extracted_content) 
             text = data.get('text', '')
             title = data.get('title', 'Article Title (Extracted by Trafilatura)')
@@ -33,10 +30,9 @@ def get_text_from_url(url):
                  raise Exception("Could not extract main article text.")
             return text, title
         
-        # Fallback if trafilatura.extract didn't return content (shouldn't happen with 'json' output)
         text = trafilatura.extract(downloaded)
         if text:
-             return text, url # Use URL as placeholder title
+             return text, url 
         
         raise Exception("Could not extract main article text.")
             
@@ -60,7 +56,6 @@ def get_text_from_pdf(pdf_file):
                 if page_text:
                     text += page_text + "\n"
         
-        # A PDF doesn't easily provide a title. Use the filename as a fallback.
         title = pdf_file.name.replace(".pdf", "").replace("_", " ").title()
         
         if not text:

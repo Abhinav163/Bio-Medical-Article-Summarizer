@@ -1,9 +1,8 @@
 import streamlit as st
 from transformers import pipeline
 from transformers import T5Tokenizer
-import math # Needed for sliding window logic
+import math 
 
-# Constants for QA chunking (based on distilbert-base-cased-distilled-squad)
 MAX_CONTEXT_LENGTH = 384
 OVERLAP = 128
 QA_QUESTION_LIMIT = 5 
@@ -34,7 +33,6 @@ def get_faqs(text):
     qg_pipeline = get_qg_pipeline()
     qa_pipeline = get_qa_pipeline()
     
-    # 1. Generate questions from the first part of the text
     qg_context = text[:2000] 
     
     generated_questions = qg_pipeline(
@@ -48,7 +46,6 @@ def get_faqs(text):
     questions = [item['generated_text'] for item in generated_questions]
     faqs = []
     
-    # 2. Answer questions using the full text via Sliding Window (QA)
     tokenizer = qa_pipeline.tokenizer
     full_tokens = tokenizer.encode(text)
     
@@ -69,10 +66,8 @@ def get_faqs(text):
             chunk_text = tokenizer.decode(chunk_tokens, skip_special_tokens=True)
 
             try:
-                # Run QA on the current chunk
                 current_answer = qa_pipeline(question=question, context=chunk_text)
                 
-                # Compare scores and keep the best one
                 if current_answer['score'] > best_score:
                     best_score = current_answer['score']
                     best_answer = current_answer
@@ -80,8 +75,7 @@ def get_faqs(text):
             except Exception as e:
                 print(f"Error processing QA for question '{question}' in chunk {i}: {e}")
 
-        # 3. Compile the final FAQs based on the best answer found
-        if best_answer and best_score > 0.1: # Use a confidence threshold
+        if best_answer and best_score > 0.1:
             faqs.append({
                 "question": question,
                 "answer": best_answer['answer']
